@@ -1,0 +1,176 @@
+#version 430
+
+layout(local_size_x = 1) in;
+
+struct Face {
+  vec4 vertices[4];
+  vec4 normal;
+  vec4 rect;
+  vec2 oldPos;
+  unsigned int numVertices, side, swap, filler;
+  float distance;
+};
+
+layout(std140, binding = 0) buffer faceBuffer
+{
+  unsigned int numFaces, filler1, filler2, filler3;
+  Face faces[];
+};
+
+layout(std140, binding = 1) buffer in2
+{
+  unsigned int number;
+};
+
+layout(binding = 3) uniform writeonly image2D outImage;
+
+float minTime;
+
+const vec3 jitterVecs[32] = vec3[](
+				   vec3(0.6855582412504327, 0.5277134041257141, 0.5015261318811455),
+				   vec3(0.6697410552468713, 0.3797286916186048, 0.6381638031715917),
+				   vec3(-0.409201710460348, -0.2518179319510123, 0.8770072344651673),
+				   vec3(-0.1610909834887933, 0.026337930436384504, 0.9865880642187709),
+				   vec3(0.3290765610440122, -0.48147749031012194, -0.8123349329532203),
+				   vec3(0.8687575180985483, -0.40226618631539074, -0.2888637915947963),
+				   vec3(-0.19835509664550605, -0.8689238132640176, 0.45346076167345556),
+				   vec3(-0.15198518027275093, -0.8896418152975234, -0.43062506365931236),
+				   vec3(-0.800767978238938, -0.41474135203567014, 0.43215767485808715),
+				   vec3(-0.7662189320229345, -0.2901697068904599, -0.5733324423166183),
+				   vec3(0.5635315220763423, -0.6546740823183463, 0.5038194811308433),
+				   vec3(0.25380668743549517, -0.9660775483384366, 0.04771096319942291),
+				   vec3(-0.006241110263068641, 0.5525031071665523, -0.8334874714799194),
+				   vec3(-0.6550266052204383, -0.6265636512384434, -0.42232468244247595),
+				   vec3(-0.33755132069356103, 0.733327030094806, -0.5901614803004043),
+				   vec3(0.8976285428138348, 0.13228692477992635, 0.4204321213444347),
+				   vec3(0.9334046553333967, 0.14708187309755252, 0.32729600059893554),
+				   vec3(0.7628213064455774, 0.5510840720386185, -0.3382454729600931),
+				   vec3(0.11257549877145141, -0.1738902710610081, -0.9783092203933723),
+				   vec3(0.640582542279957, -0.08307403990815056, -0.7633824142718288),
+				   vec3(-0.13358616688942787, 0.3784493494869133, -0.9159316709715426),
+				   vec3(0.9339883905594335, 0.11893342618169504, 0.3369280730911012),
+				   vec3(-0.761510803304086, 0.6290705531648894, 0.15611385458051374),
+				   vec3(-0.9174103381310186, -0.1041952838731614, -0.3840593890388847),
+				   vec3(0.7271247930781345, -0.5861819766310358, 0.3573236985759722),
+				   vec3(-0.03219320259507848, -0.5770071712144283, -0.8161043573427332),
+				   vec3(0.025414773970879167, 0.9866896853765041, -0.1606161699070939),
+				   vec3(-0.7749775105393538, -0.6305183652250088, -0.0430865323762306),
+				   vec3(-0.6022426240876521, 0.7411680419474104, -0.29660370079933385),
+				   vec3(-0.5492452335179089, -0.43694867180393915, 0.7123240355811612),
+				   vec3(0.1001716546332759, 0.8580626750241022, 0.5036805389713936),
+				   vec3(-0.45085529876928165, 0.707213573412192, 0.5445901772463582)
+				   );
+
+vec2 swizzleFor(vec3 point, uint side) {
+  if(side == 0) {
+    return point.yz;
+  } else if(side == 1) {
+    return point.xz;
+  }
+  return point.xy;
+};
+
+bool collideFace(int face, vec3 start, vec3 dir) {
+  float startVal =faces[face].distance - dot(start, faces[face].normal.xyz);
+  float normal = dot(dir, faces[face].normal.xyz);
+  if(normal < 0.0001 && normal > -0.0001) {
+    return false;
+  }
+  minTime = startVal / normal;
+  vec3 collision = start + dir * minTime;
+  vec2 point2d = swizzleFor(start, faces[face].side);
+  int i;
+  for(i = 0; i < faces[face].numVertices; i++) {
+    int j = (i == faces[face].numVertices - 1 ? 0 : i + 1);
+    vec2 v1 = swizzleFor(faces[face].vertices[i].xyz, faces[face].side);
+    vec2 v2 = swizzleFor(faces[face].vertices[j].xyz, faces[face].side);
+    vec2 norm = vec2(v1.y - v2.y, v2.x - v1.x);
+    float dst = dot(norm, v1);
+    float pt = dot(swizzleFor(collision, faces[face].side), norm);
+    if(pt < dst) {
+      return false;
+    }
+  }
+  return true;
+};
+
+bool castRay(vec3 start, vec3 dir, int ignore) {
+  float time = -1;
+  int i;
+  for(i = 0; i < numFaces; i++) {
+    if(i == ignore) {
+      continue;
+    }
+    if(collideFace(i, start, dir)) {
+      if(minTime >= 0 && (minTime < time || time < 0)) {
+	time = minTime;
+      }
+    }
+  }
+  minTime = time;
+  return time > -0.5;
+};
+
+void main() {
+  float scale = 64.0;
+  vec2 pos = vec2(gl_WorkGroupID.x, gl_WorkGroupID.y) / 1024.0;
+  float padding = 0.0025;
+  float brightness = 0.2;
+  int i, j;
+  for(i = 0; i < numFaces; i++) {
+    vec2 p1 = faces[i].rect.xy - vec2(padding, padding);
+    vec2 p2 = faces[i].rect.xy + faces[i].rect.zw + vec2(padding, padding);
+    if(pos.x > p1.x && pos.y > p1.y &&
+       pos.x < p2.x && pos.y < p2.y) {
+      vec3 pos3 = vec3(0, 0, 0);
+      pos += (faces[i].oldPos - faces[i].rect.xy);
+      pos *= scale;
+      if(bool(faces[i].swap)) {
+	pos.xy = pos.yx;
+      }
+      switch(faces[i].side) {
+      case 0:
+	pos3.x = (faces[i].distance - (faces[i].normal.y * pos.x + faces[i].normal.z * pos.y)) / faces[i].normal.x;
+	pos3.y = pos.x;
+	pos3.z = pos.y;
+	break;
+      case 1:
+	pos3.x = pos.x;
+	pos3.y = (faces[i].distance - (faces[i].normal.x * pos.x + faces[i].normal.z * pos.y)) / faces[i].normal.y;
+	pos3.z = pos.y;
+	break;
+      case 2:
+	pos3.x = pos.x;
+	pos3.y = pos.y;
+	pos3.z = (faces[i].distance - (faces[i].normal.x * pos.x + faces[i].normal.y * pos.y)) / faces[i].normal.z;
+	break;
+      }
+
+      for(j = 0; j < 16; j++) {
+	vec3 sun = vec3(0, -0.5, 0.5) + jitterVecs[j] * 0.03;
+	if(!castRay(pos3, sun, i)) {
+	  brightness += max(0, -dot(sun, faces[i].normal.xyz)) * 0.125;
+	}
+      }
+      float ao = 0;
+      for(j = 0; j < 32; j++) {
+	vec3 sun = jitterVecs[j] * 1.6;
+	float mult = -dot(sun, faces[i].normal.xyz);
+	if(mult < 0) {
+	  sun += faces[i].normal.xyz * mult * 2;
+	  mult = -dot(sun, faces[i].normal.xyz);
+	}
+	if(mult > 0) {
+	  castRay(pos3, sun, i);
+	  if(minTime < 0 || minTime > 1) {
+	    minTime = 1;
+	  }
+	  ao += minTime * 0.03125 * mult;
+	}
+      }
+      brightness *= ao;
+      break;
+    }
+  }
+  imageStore(outImage, ivec2(gl_WorkGroupID.x, gl_WorkGroupID.y), vec4(brightness, 0, 0, 0));
+};
