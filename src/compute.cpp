@@ -70,6 +70,8 @@ Compute::Compute(std::string path) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
   glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, 1024, 1024, 0, GL_RED, GL_FLOAT, NULL);
+
+  glUseProgram(program);
 };
 
 Compute::~Compute() {

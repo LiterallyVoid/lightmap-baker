@@ -1,3 +1,4 @@
 lightmap
-lightmap.png
 src/*.o
+*.png
+*.raw

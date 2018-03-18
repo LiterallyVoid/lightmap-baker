@@ -9,7 +9,7 @@
 
 class Map {
 public:
-  Map(std::string path);
+  Map(std::string path, std::string outPath);
   ~Map();
 
   void draw();
@@ -42,6 +42,7 @@ public:
   };
 
 private:
+  std::string outPath;
   std::vector<Box> boxes;
   std::vector<Face> faces;
   unsigned char data[1024][1024][4];

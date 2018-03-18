@@ -1,10 +1,12 @@
 #include <GL/glew.h>
+#define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>
 
 #include <fstream>
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "util.h"
 #include "compute.h"
@@ -31,7 +33,7 @@ bool sortFaces(const Map::Box& lhs, const Map::Box& rhs) {
   return false;
 };
 
-Map::Map(std::string path) {
+Map::Map(std::string path, std::string outPath) : outPath(outPath) {
   std::ifstream file;
   file.open(path);
 
@@ -56,8 +58,11 @@ Map::Map(std::string path) {
     }
   }
 
+  printf("Calculating normals...\n");
   calcNormals();
+  printf("Calculating lightmap UVs...\n");
   calcLightmapUV();
+  printf("Compiling lightmap...\n");
   compileLightmap();
 };
 
@@ -306,11 +311,15 @@ void Map::compileLightmap() {
   double padding = LIGHTMAP_PADDING * 0.5;
   std::string path("shaders/lightmap.comp");
   Compute compute(path);
-  struct {
+  struct DataType {
     unsigned int numFaces, a, b, c;
-    GLSLFace glslfaces[1024];
-  } in1;
-  in1.numFaces = boxes.size();
+  };
+
+  DataType *in1 = (DataType*) malloc(sizeof(DataType) + sizeof(GLSLFace) * boxes.size());
+
+  GLSLFace *gfaces = (GLSLFace*) (in1 + 1);
+  
+  in1->numFaces = boxes.size();
   for(int i = 0; i < boxes.size(); i++) {
     Face *f = &faces[boxes[i].face];
     GLSLFace gf;
@@ -337,10 +346,10 @@ void Map::compileLightmap() {
     gf.oldPos[1] = boxes[i].y2;
 
     gf.distance = f->distance;
-    
-    in1.glslfaces[i] = gf;//.push_back(gf);
+
+    gfaces[i] = gf;
   }
-  compute.setData(0, in1.numFaces * sizeof(GLSLFace) + sizeof(unsigned int) * 4, (void*) &in1);
+  compute.setData(0, in1->numFaces * sizeof(GLSLFace) + sizeof(DataType) * 4, (void*) in1);
   compute.execute(1024, 1024, 1);
   std::vector<float> data = compute.getData();
 
@@ -357,7 +366,7 @@ void Map::compileLightmap() {
   
   t = new Texture(1024, 1024, (unsigned char*) tex);
   t->bind();
-  t->write("lightmap.png");
+  t->write(outPath);
 };
 
 void Map::draw() {
@@ -369,26 +378,4 @@ void Map::draw() {
     }
     glEnd();
   }
-  glBegin(GL_QUADS);
-  glTexCoord2f(0, 0);
-  glVertex3f(20, 0, -0.02);
-  glTexCoord2f(1, 0);
-  glVertex3f(21, 0, -0.02);
-  glTexCoord2f(1, 1);
-  glVertex3f(21, 1, -0.02);
-  glTexCoord2f(0, 1);
-  glVertex3f(20, 1, -0.02);
-  glEnd();
-  glDisable(GL_TEXTURE_2D);
-  glColor3f(1.0, 0.0, 0.0);
-  for(int i = 0; i < faces.size(); i++) {
-    glBegin(GL_POLYGON);
-    for(int j = 0; j < faces[i].vertices.size(); j++) {
-      glTexCoord2dv(faces[i].vertices[j].lightmapUV);
-      glVertex2d(faces[i].vertices[j].lightmapUV[0] + 20, faces[i].vertices[j].lightmapUV[1]);
-    }
-    glEnd();
-  }
-  glEnable(GL_TEXTURE_2D);
-  glColor3f(1.0, 1.0, 1.0);
 };

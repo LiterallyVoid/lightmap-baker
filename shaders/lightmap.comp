@@ -24,6 +24,8 @@ layout(std140, binding = 1) buffer in2
 
 layout(binding = 3) uniform writeonly image2D outImage;
 
+layout(location = 6) uniform int offset;
+
 float minTime;
 
 const vec3 jitterVecs[32] = vec3[](
@@ -71,7 +73,7 @@ vec2 swizzleFor(vec3 point, uint side) {
 };
 
 bool collideFace(int face, vec3 start, vec3 dir) {
-  float startVal =faces[face].distance - dot(start, faces[face].normal.xyz);
+  float startVal = faces[face].distance - dot(start, faces[face].normal.xyz);
   float normal = dot(dir, faces[face].normal.xyz);
   if(normal < 0.0001 && normal > -0.0001) {
     return false;
@@ -113,7 +115,7 @@ bool castRay(vec3 start, vec3 dir, int ignore) {
 
 void main() {
   float scale = 64.0;
-  vec2 pos = vec2(gl_WorkGroupID.x, gl_WorkGroupID.y) / 1024.0;
+  vec2 pos = vec2(gl_WorkGroupID.x, gl_WorkGroupID.y + offset) / 1024.0;
   float padding = 0.0025;
   float brightness = 0.2;
   int i, j;
@@ -172,5 +174,5 @@ void main() {
       break;
     }
   }
-  imageStore(outImage, ivec2(gl_WorkGroupID.x, gl_WorkGroupID.y), vec4(brightness, 0, 0, 0));
+  imageStore(outImage, ivec2(gl_WorkGroupID.x, gl_WorkGroupID.y + offset), vec4(brightness, 0, 0, 0));
 };
